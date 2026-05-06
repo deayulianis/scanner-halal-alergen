@@ -1,0 +1,7 @@
+streamlit
+opencv-python-headless
+pytesseract
+numpy
+pandas
+requests
+rapidfuzz

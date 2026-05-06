@@ -1,0 +1,1 @@
+# scanner-halal-alergen

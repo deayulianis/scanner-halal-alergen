@@ -127,61 +127,106 @@ def detect_halal_status(ingredients):
     return "HALAL", [], []
 
 # --- 6. UI STREAMLIT ---
-st.markdown("<style>.stMetric { background-color: #f0f2f6; padding: 15px; border-radius: 10px; }</style>", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    /* Membuat kotak kamera lebih lebar dan responsif */
+    [data-testid="stCameraInput"] {
+        width: 100% !important;
+        max-width: 700px !important;
+        margin: 0 auto;
+    }
+    
+    /* Mengatur rasio video agar lebih bulat dan profesional */
+    [data-testid="stCameraInput"] video {
+        border-radius: 15px;
+        border: 3px solid #4CAF50;
+    }
+
+    /* Memperbesar tombol ambil foto agar mudah ditekan di HP */
+    [data-testid="stCameraInput"] button {
+        background-color: #4CAF50 !important;
+        color: white !important;
+        padding: 10px 20px !important;
+    }
+
+    /* Style tambahan untuk metric */
+    .stMetric { 
+        background-color: #f0f2f6; 
+        padding: 15px; 
+        border-radius: 10px; 
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("🔍 Halal & Allergen Scanner")
 
 tab_camera, tab_upload = st.tabs(["📸 Ambil Foto", "📁 Upload Gambar"])
 source_img = None
 
 with tab_camera:
-    source_img = st.camera_input("Ambil foto komposisi")
+    # Menambahkan instruksi kecil di atas kamera
+    st.info("💡 **Tips:** Dekatkan kamera ke teks komposisi hingga terlihat jelas.")
+    source_img = st.camera_input("Scan Komposisi")
+
 with tab_upload:
-    up_img = st.file_uploader("Pilih gambar", type=["jpg", "jpeg", "png"])
+    up_img = st.file_uploader("Pilih gambar dari galeri", type=["jpg", "jpeg", "png"])
     if up_img: source_img = up_img
 
+# --- LOGIKA ANALISIS SETELAH GAMBAR DIINPUT ---
 if source_img:
     file_bytes = np.asarray(bytearray(source_img.read()), dtype=np.uint8)
     image = cv2.imdecode(file_bytes, 1)
     
     with st.status("Sedang menganalisis...", expanded=True) as status:
-        st.write("Preprocessing gambar...")
+        st.write("Mempersiapkan gambar...")
+        # Preprocessing sesuai riset Colab
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         denoise = cv2.fastNlMeansDenoising(gray, h=10)
         thresh = cv2.threshold(denoise, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         
-        st.write("Menjalankan OCR...")
+        st.write("Membaca teks komposisi...")
         text_raw = pytesseract.image_to_string(thresh, lang='ind+eng')
         
-        st.write("Pembersihan teks & Normalisasi...")
+        st.write("Mengoreksi kata (Fuzzy Matching)...")
         clean = clean_text(text_raw)
         ings = extract_ingredients(clean)
         normalized = [normalize_ingredient(i) for i in ings]
         
-        st.write("Cek Status Halal & Alergen...")
+        st.write("Mengecek status halal & alergen...")
         allergens = detect_allergen(normalized)
         halal_status, non_halal_list, critical_list = detect_halal_status(normalized)
         
         status.update(label="Analisis Selesai!", state="complete")
 
+    # --- TAMPILAN HASIL ---
     st.divider()
     c1, c2 = st.columns(2)
     with c1:
-        if halal_status == "HALAL": st.success(f"### ✅ {halal_status}")
-        elif "NON-HALAL" in halal_status: st.error(f"### ❌ {halal_status}")
-        else: st.warning(f"### ⚠️ {halal_status}")
+        if halal_status == "HALAL": 
+            st.success(f"### ✅ {halal_status}")
+        elif "NON-HALAL" in halal_status: 
+            st.error(f"### ❌ {halal_status}")
+        else: 
+            st.warning(f"### ⚠️ {halal_status}")
     with c2:
         st.metric("Bahan Terdeteksi", len(normalized))
 
-    if non_halal_list: st.error(f"**Bahan Haram:** {', '.join(non_halal_list)}")
-    if critical_list: st.info(f"**Titik Kritis:** {', '.join(critical_list)}")
+    # Detail Bahan Haram/Kritis
+    if non_halal_list: 
+        st.error(f"**Bahan Haram:** {', '.join(non_halal_list)}")
+    if critical_list: 
+        st.info(f"**Titik Kritis:** {', '.join(critical_list)}")
 
-    st.markdown("### 🥛 Alergen")
+    # Tampilan Alergen
+    st.markdown("### 🥛 Alergen Terdeteksi")
     if allergens:
-        for a in allergens: st.warning(f"⚠️ **{a}**")
+        cols = st.columns(len(allergens) if len(allergens) > 0 else 1)
+        for idx, a in enumerate(allergens):
+            cols[idx % len(cols)].warning(f"**{a}**")
     else:
         st.write("✅ Aman dari alergen umum.")
 
-    with st.expander("Lihat Detail Hasil"):
-        st.write("**Teks Mentah OCR:**", text_raw)
-        st.write("**Daftar Bahan (Sudah Koreksi):**", normalized)
-        st.image(thresh, caption="Gambar yang diproses mesin")
+    # Detail Debug (Bisa disembunyikan)
+    with st.expander("Lihat Detail Hasil Scan"):
+        st.write("**Daftar Bahan:**", normalized)
+        st.image(thresh, caption="Hasil Preprocessing (Hitam Putih)")
